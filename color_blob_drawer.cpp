@@ -27,6 +27,9 @@ http://docs.opencv.org/modules/highgui/doc/reading_and_writing_images_and_video.
 #include <opencv2/imgproc/imgproc.hpp>
 #include "timer.h"
 #include "disjoint_sets2.h"
+//#define DEBUG_PRINT(...)   {}
+#define DEBUG_PRINT(...)   printf(__VA_ARGS__)
+
 
 namespace image_utils {
 inline void HSVfilter(const cv::Mat3b & srcHSV,
@@ -91,14 +94,10 @@ public:
   static const int TRACKING_WINDOW_HEIGHT_PERCENT = 40;
   //! the minimum biggest size of the biggest component for declaring the search OK, in pixels
   static const unsigned int MIN_BIGGEST_SIZE = 250;
-  //! the time to stop a drawing, in seconds
+  //! the time to stop a drawing, in milliseconds
   static const int TIME_THRES_DRAWING_STOP = 2000;
   //! the maximum error allowed to call the function
   static const int RECOGNITION_ERROR_THRES = 3;
-
-  static const int DRAWING_IMAGE_LITTLE_WIDTH = 640;
-  static const int DRAWING_IMAGE_LITTLE_HEIGHT = 480;
-
 
   /* constructor */
   CPaintRecognizer() {
@@ -106,23 +105,19 @@ public:
     track_window_.width = -1; // marker to know we haven't init
     is_color_blob_found_last_frame = is_color_blob_found = false;
     is_drawing = false;
-    // create the images
-    drawing_image.create(DRAWING_IMAGE_LITTLE_HEIGHT,
-                         DRAWING_IMAGE_LITTLE_WIDTH);
-    WIN1NAME = "filter";
-    cv::namedWindow(WIN1NAME);
-    hue_min = 60;
-    hue_max = 100;
-    saturation_min = 50;
-    saturation_max = 255;
-    value_min = 140;
-    value_max= 255;
-    cv::createTrackbar("HUE_MIN", WIN1NAME, &hue_min, 255);
-    cv::createTrackbar("HUE_MAX", WIN1NAME, &hue_max, 255);
-    cv::createTrackbar("SATURATION_MIN", WIN1NAME, &saturation_min, 255);
-    cv::createTrackbar("SATURATION_MAX", WIN1NAME, &saturation_max, 255);
-    cv::createTrackbar("VALUE_MIN", WIN1NAME, &value_min, 255);
-    cv::createTrackbar("VALUE_MAX", WIN1NAME, &value_max, 255);
+    FILTERWIN = "filter";
+    cv::namedWindow(FILTERWIN);
+
+    // banana
+    hue_min = 15; hue_max = 30;
+    saturation_min = 50; saturation_max = 255;
+    value_min = 100; value_max= 255;
+    cv::createTrackbar("HUE_MIN", FILTERWIN, &hue_min, 255);
+    cv::createTrackbar("HUE_MAX", FILTERWIN, &hue_max, 255);
+    cv::createTrackbar("SATURATION_MIN", FILTERWIN, &saturation_min, 255);
+    cv::createTrackbar("SATURATION_MAX", FILTERWIN, &saturation_max, 255);
+    cv::createTrackbar("VALUE_MIN", FILTERWIN, &value_min, 255);
+    cv::createTrackbar("VALUE_MAX", FILTERWIN, &value_max, 255);
   }
 
   /* destructor */
@@ -131,13 +126,17 @@ public:
   ////////////////////////////////////////////////////////////////////////////////
 
   void process_rgb(const cv::Mat3b & rgb) {
-    printf("process_rgb(const cv::Mat3b & rgb)\n");
+    DEBUG_PRINT("process_rgb(const cv::Mat3b & rgb)\n");
     timer.reset();
 
-    if (track_window_.width == -1)
-      track_color_blob_init(rgb);
+    if (track_window_.width == -1) { // init the track window
+      // create the images
+      drawing_image.create(rgb.rows, rgb.cols);
+      track_window_.width = TRACKING_WINDOW_WIDTH_PERCENT * rgb.cols / 100;
+      track_window_.height = TRACKING_WINDOW_HEIGHT_PERCENT * rgb.rows / 100;
+      move_track_window(rgb, cv::Point(rgb.cols / 2, rgb.rows / 2));
+    }
     find_color_blob(rgb);
-
     drawer();
     display(rgb);
     timer.printTime("after find_color_blob()");
@@ -147,36 +146,51 @@ private:
   ////////////////////////////////////////////////////////////////////////////////
 
   void display(const cv::Mat3b & rgb) {
-    cv::cvtColor(final_mask_, frameOut, CV_GRAY2RGB);
-
+    // filter_illus
+    cv::cvtColor(final_mask_, filter_illus, CV_GRAY2RGB);
     // draw the pencil
     if (is_color_blob_found == true) {
-      cv::circle(frameOut, color_blob_center, 5, CV_RGB(0, 0, 0), -1);
-      cv::circle(frameOut, color_blob_center, 2, CV_RGB(0, 255, 0), -1);
+      cv::circle(filter_illus, color_blob_center, 5, CV_RGB(0, 0, 0), -1);
+      cv::circle(filter_illus, color_blob_center, 2, CV_RGB(0, 255, 0), -1);
     }
     // pencil not found => make a red cross
     else {
-      cv::line(frameOut, cv::Point(0, 0), cv::Point(rgb.cols, rgb.rows),
+      cv::line(filter_illus, cv::Point(0, 0), cv::Point(rgb.cols, rgb.rows),
                CV_RGB(255, 0, 0), 15);
-      cv::line(frameOut, cv::Point(0, rgb.rows), cv::Point(rgb.cols, 0),
+      cv::line(filter_illus, cv::Point(0, rgb.rows), cv::Point(rgb.cols, 0),
                CV_RGB(255, 0, 0), 15);
     }
-
     // draw the search box
-    cv::rectangle(frameOut, track_window_, CV_RGB(0, 0, 255), 2);
+    cv::rectangle(filter_illus, track_window_, CV_RGB(0, 0, 255), 2);
     // search box too close from the border => make a red rectangle
     if (is_track_window_close_from_borders)
-      cv::rectangle(frameOut,
-                    cv::Point(0, 0),
-                    cv::Point(rgb.cols, rgb.rows),
+      cv::rectangle(filter_illus,
+                    cv::Point(0, 0), cv::Point(rgb.cols, rgb.rows),
                     CV_RGB(255, 0, 0), 15);
 
-    /* display in the 2 windows */
-    cv::imshow("rgb", rgb);
-    cv::imshow("drawing_image", drawing_image);
-    cv::imshow(WIN1NAME, frameOut);
+    // collage_image
+    rgb.copyTo(collage_image);
+    collage_image.setTo(cv::Vec3b(0, 150, 0), final_mask_);
+    cv::flip(collage_image, collage_image, 1);
+    collage_image.setTo(cv::Vec3b(0, 255, 0), drawing_image);
+    if (is_drawing) {
+      cv::circle(collage_image,
+                 cv::Point(collage_image.cols - 35, collage_image.rows - 35),
+                 25, CV_RGB(255, 0, 0), 2);
+    } else {
+      cv::rectangle(collage_image,
+                    cv::Point(collage_image.cols - 50, collage_image.rows - 50),
+                    cv::Point(collage_image.cols - 10, collage_image.rows - 10),
+                    CV_RGB(0, 255, 0), 2);
+    }
 
-    char c = (cv::waitKey(5) & 255);
+    /* display in the windows */
+    //cv::imshow("rgb", rgb);
+    cv::imshow(FILTERWIN, filter_illus);
+    //cv::imshow("drawing_image", drawing_image);
+    cv::imshow("collage_image", collage_image);
+
+    char c = cv::waitKey(25);
     if (c == ' ') {
       //startStopDrawer();
     }
@@ -187,23 +201,20 @@ private:
   ////////////////////////////////////////////////////////////////////////////////
 
   void find_color_blob(const cv::Mat3b & rgb) {
-    printf("find_color_blob()\n");
-
-    /* get the monochrome version of frame */
+    DEBUG_PRINT("find_color_blob()\n");
     thres_image(rgb);
 
     is_color_blob_found_last_frame = is_color_blob_found;
     if (is_color_blob_found_last_frame == true) // found in the last image
       track_color_blob(rgb);
-
-    if (is_color_blob_found_last_frame == false)
+    else
       find_color_blob_no_tracking(rgb);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
 
   void thres_image(const cv::Mat3b & rgb) {
-    printf( "thres_image()\n" );
+    DEBUG_PRINT( "thres_image()\n" );
 
     cv::cvtColor(rgb, hsv_, CV_BGR2HSV);
     image_utils::HSVfilter(hsv_, 255, final_mask_,
@@ -211,23 +222,23 @@ private:
                            saturation_min, saturation_max,
                            value_min, value_max,
                            hue_, saturation_, value_);
-    //printf("final_mask_:%s", image_utils::infosImage(final_mask_).c_str());
+    //DEBUG_PRINT("final_mask_:%s", image_utils::infosImage(final_mask_).c_str());
   }
 
   ////////////////////////////////////////////////////////////////////////////////
 
   void find_color_blob_no_tracking(const cv::Mat3b & rgb) {
-    printf("find_color_blob_no_tracking()\n");
+    DEBUG_PRINT("find_color_blob_no_tracking()\n");
 
     /* find center */
     //image_utils::biggestComponent_vector(final_mask_, biggest);
     disjoint_set.process_image(final_mask_);
     disjoint_set.biggestComponent_vector(final_mask_.cols, biggest_comp);
-    printf("find_color_blob_no_tracking(): biggest.size():%i\n", (int) biggest_comp.size());
+    DEBUG_PRINT("find_color_blob_no_tracking(): biggest.size():%i\n", (int) biggest_comp.size());
 
     // pencil found => move it
     if (biggest_comp.size() < MIN_BIGGEST_SIZE) {
-      printf("find_color_blob_no_tracking(): biggest.size() not sufficient, is_color_blob_found = 0\n");
+      DEBUG_PRINT("find_color_blob_no_tracking(): biggest.size() not sufficient, is_color_blob_found = 0\n");
       is_color_blob_found = false;
       return;
     }
@@ -239,32 +250,18 @@ private:
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  void track_color_blob_init(const cv::Mat3b & rgb) {
-    printf("track_color_blob_init()\n");
-
-    // init the track window
-    track_window_.width = TRACKING_WINDOW_WIDTH_PERCENT * rgb.cols / 100;
-    track_window_.height = TRACKING_WINDOW_HEIGHT_PERCENT * rgb.rows / 100;
-    move_track_window(rgb, cv::Point(rgb.cols / 2, rgb.rows / 2));
-
-    // init the tracking
-    is_color_blob_found = false;
-  }
-
-  ////////////////////////////////////////////////////////////////////////////////
-
   void track_color_blob(const cv::Mat3b & rgb) {
-    printf("track_color_blob()\n");
+    DEBUG_PRINT("track_color_blob()\n");
 
     /* find center */
     final_mask_(track_window_).copyTo(final_mask_roi_);
     disjoint_set.process_image(final_mask_roi_);
     disjoint_set.biggestComponent_vector(final_mask_roi_.cols, biggest_comp);
-    printf("track_color_blob(): biggest.size():%i\n", (int) biggest_comp.size());
+    DEBUG_PRINT("track_color_blob(): biggest.size():%i\n", (int) biggest_comp.size());
 
     // pencil found => move it
     if (biggest_comp.size() < MIN_BIGGEST_SIZE) {
-      printf("track_color_blob(): biggest.size() not sufficient, is_tracking_successful = 0\n");
+      DEBUG_PRINT("track_color_blob(): biggest.size() not sufficient, is_tracking_successful = 0\n");
       is_color_blob_found = false;
       return;
     }
@@ -280,8 +277,7 @@ private:
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  void move_track_window(const cv::Mat3b & rgb,
-                         cv::Point p) {
+  void move_track_window(const cv::Mat3b & rgb, const cv::Point & p) {
     is_track_window_close_from_borders = 0;
     // look if we go over, with the x coordinate
     if (p.x - track_window_.width / 2 <= 0) {
@@ -307,33 +303,34 @@ private:
   //////////////////////////////////////////////////////////////////////////////
 
   void drawer() {
-    printf("drawer()\n");
-
-    // see if the drawing has just stopped
-    if (is_color_blob_found == false) {
-      if (is_color_blob_found_last_frame == false) {
-        // the pencil was not found in the last image
-        printf("The pencil has disappeard since : %g ms\n",
-               pencil_last_appearance_timer.time());
-        // if drawing and the pencil lost for too much time => stop
-        if (is_drawing && timer.time() > TIME_THRES_DRAWING_STOP)
-          stopDrawer();
-      }
-      else { // is_color_blob_found_last_frame == true
-        printf("The pencil has just disappeard !\n");
-        pencil_last_appearance_timer.reset();
-      } // end is_color_blob_found_last_frame
-    } // end if is_color_blob_found == false
-
-    else { // is_color_blob_found == true
-      move_pencil(color_blob_center.x, color_blob_center.y);
+    DEBUG_PRINT("drawer()\n");
+    if (is_color_blob_found){
+      DEBUG_PRINT("move_pencil(%i, %i)\n", color_blob_center.x, color_blob_center.y);
+      pencil_noReverse.x = color_blob_center.x;
+      pencil_noReverse.y = color_blob_center.y;
       if (is_drawing) {
-        printf("The drawing goes on.\n");
+        DEBUG_PRINT("The drawing goes on.\n");
         add_point_to_drawing(pencil_noReverse);
       }
       else // start a drawing
-        startDrawer();
+        startDrawer(pencil_noReverse);
     } // end if is_color_blob_found == true
+
+    // see if the drawing has just stopped
+    else { // is_color_blob_found == false
+      if (is_color_blob_found_last_frame == false) {
+        // the pencil was not found in the last image
+        DEBUG_PRINT("The pencil has disappeard since : %g ms\n",
+               pencil_last_appearance_timer.time());
+        // if drawing and the pencil lost for too much time => stop
+        if (is_drawing && pencil_last_appearance_timer.time() > TIME_THRES_DRAWING_STOP)
+          stopDrawer();
+      }
+      else { // is_color_blob_found_last_frame == true
+        DEBUG_PRINT("The pencil has just disappeard !\n");
+        pencil_last_appearance_timer.reset();
+      } // end is_color_blob_found_last_frame
+    } // end if is_color_blob_found == false
 
 #if PZ_FIND_VIDEOS
     writer_frameOut.write(frameOut);
@@ -348,55 +345,30 @@ private:
     }
     writer_frame_drawing.write(illus );
 #endif
-
-    if (is_drawing) {
-      cv::circle(drawing_image,
-                 cv::Point(drawing_image.cols - 35, drawing_image.rows - 35),
-                 25, CV_RGB(255, 0, 0), 2);
-    } else {
-      cv::rectangle(drawing_image,
-                    cv::Point(drawing_image.cols - 50, drawing_image.rows - 50),
-                    cv::Point(drawing_image.cols - 10, drawing_image.rows - 10),
-                    CV_RGB(0, 255, 0), 2);
-      cv::rectangle(drawing_image,
-                    cv::Point(drawing_image.cols - 30, drawing_image.rows - 50),
-                    cv::Point(drawing_image.cols - 20, drawing_image.rows - 10),
-                    CV_RGB(0, 255, 0), 2);
-    }
-
-    printf("end of drawer()\n");
-  }
+  } // end of drawer()
 
   /////
   ///// drawing
   /////
   //! to launch a new drawing_image, or to finish one (analyse the drawing_image)
-  void startDrawer() {
-    printf("startDrawer()\n");
-    current_drawn_pencil.x = -1;
+  void startDrawer(const cv::Point & p) {
+    DEBUG_PRINT("startDrawer(%i,%i)\n", p.x, p.y);
+    last_drawn_pencil = current_drawn_pencil = reverse_coord(p);
     drawing_image.setTo(0); // clear the image
     is_drawing = true;
   }
 
   void stopDrawer() {
-    printf("stopDrawer()\n");
+    DEBUG_PRINT("stopDrawer()\n");
     drawing_image.setTo(0); // clear the image
     is_drawing = false;
   }
 
-  void add_point_to_drawing(cv::Point p) {
+  void add_point_to_drawing(const cv::Point & p) {
     last_drawn_pencil = current_drawn_pencil;
     current_drawn_pencil = reverse_coord(p);
-    if (last_drawn_pencil.x > -1)
-      cv::line(drawing_image, last_drawn_pencil, current_drawn_pencil,
-               cvScalarAll(255), PENCIL_DIAMETER);
-  }
-
-  //! move the pencil to a given point
-  inline void move_pencil(int x, int y) {
-    printf("move_pencil(%i, %i)\n", x, y);
-    pencil_noReverse.x = x;
-    pencil_noReverse.y = y;
+    cv::line(drawing_image, last_drawn_pencil, current_drawn_pencil,
+             cvScalarAll(255), PENCIL_DIAMETER);
   }
 
   //! get the coordinates of the pencil
@@ -414,22 +386,20 @@ private:
   //! parameters of the filter
   int hue_min, hue_max, saturation_min, saturation_max, value_min, value_max;
   cv::Mat3b hsv_;
-  cv::Mat1b hue_, saturation_, value_;
-  cv::Mat1b final_mask_;
-  cv::Mat3b frameOut;
+  cv::Mat1b hue_, saturation_, value_, final_mask_;
+  cv::Mat3b filter_illus;
   cv::Rect track_window_;
   cv::Mat1b final_mask_roi_;
   bool is_track_window_close_from_borders;
   DisjointSets2 disjoint_set;
   std::vector<cv::Point> biggest_comp;
-  std::string WIN1NAME;
+  std::string FILTERWIN;
   //////////////////////////////////////////////////////////////////////////////
   int PENCIL_DIAMETER;
-  cv::Point last_drawn_pencil;
-  cv::Point current_drawn_pencil;
+  cv::Point last_drawn_pencil, current_drawn_pencil, pencil_noReverse;
   cv::Mat1b drawing_image; // the current drawing_image
+  cv::Mat3b collage_image;
   bool is_drawing;
-  cv::Point pencil_noReverse;
   Timer timer, pencil_last_appearance_timer;
 }; // end class CPaintRecognizer
 
@@ -438,9 +408,10 @@ private:
 
 int main(int, char**) {
   cv::VideoCapture cap(0); // open the default camera
-  int w = 640, h = 480;
+  int w = 320, h = 240;
+  //int w = 640, h = 480;
   //int w = 1600, h = 1200;
-  printf("w:%i, h:%i\n", w, h);
+  DEBUG_PRINT("w:%i, h:%i\n", w, h);
   assert(cap.isOpened());  // check if we succeeded
   cap.set(CV_CAP_PROP_FRAME_WIDTH, w);
   cap.set(CV_CAP_PROP_FRAME_HEIGHT, h);

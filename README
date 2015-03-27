@@ -1,8 +1,10 @@
-                  +----------------------+
-                  | camera_opencv_sample |
-                  +----------------------+
+                  +-------------------+
+                  | color_blob_drawer |
+                  +-------------------+
 
-A simple OpenCV sample for acquiring frames from a camera.
+A color tracking application, that enables you to draw
+arbitrary shapes on the screen
+by moving a colorful object.
 
 License :                  see the LICENSE file.
 Authors :                  see the AUTHORS file.
@@ -12,6 +14,23 @@ ________________________________________________________________________________
 
 How to use the program
 ________________________________________________________________________________
-To display the help, just launch the program in a terminal.
-It will display the help of the program.
+Ensure yout webcam is plugged, then launch the program in a terminal.
+It will create two windows: the filter window and the drawing window.
 
+* 1-Setting up the filter window
+
+Select the color of the object using the sliders in the filter window.
+The color filter is made of three components:
+* a Hue component
+* a Saturation component
+* a Value component
+For more information about what these components mean, check Wikipedia:
+http://en.wikipedia.org/wiki/HSL_and_HSV
+The white pixels correspond to the pixels that pass the current HSV filter.
+You should adjust the sliders until only the object to track is marked in white.
+
+* 1-Using the drawing window
+
+Once the filter is set up, you can use the drawing window.
+Move your object around to draw in the drawing window.
+Hide it for a few seconds to clear the drawing.

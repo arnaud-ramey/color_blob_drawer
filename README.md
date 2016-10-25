@@ -2,6 +2,8 @@
                   | color_blob_drawer |
                   +-------------------+
 
+[![Build Status](https://travis-ci.org/arnaud-ramey/color_blob_drawer.svg)](https://travis-ci.org/arnaud-ramey/color_blob_drawer)
+
 A color tracking application, that enables you to draw arbitrary shapes on
 the screen by moving a colorful object. In fact, the program tracks a moving
 blob on a video. The blob is defined by its range of color. For instance, if

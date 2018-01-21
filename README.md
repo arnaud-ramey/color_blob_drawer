@@ -12,6 +12,8 @@ colors is a range of orange (in fact the conditions on the range of colors
 are made of a minimum and a maximum allowed values for the 3 Hue, Saturation
 and Value components of the colors, that is 6 thresholds).
 
+![First capture](doc/capture.png)
+
 Here is how you localize the blob on a frame.
 1) We first define the search area. If the blob was not found on the
   previous picture, the search area is the whole current frame, otherwise it
